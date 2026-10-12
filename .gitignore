@@ -21,3 +21,8 @@
 /server/node_modules/
 # scripts/build-patches.sh: unmodified pret/pokefirered and its original ROMs
 /.retail/
+
+# server/: local secrets for the dev server (ADMIN_TOKEN=...)
+/server/.dev.vars
+# the production admin token, kept only on this computer
+/.admin-token

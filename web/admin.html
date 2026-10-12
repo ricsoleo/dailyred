@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Daily Red admin</title>
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="admin.css">
+  <script type="module" src="admin.js"></script>
+</head>
+<body>
+  <!-- The site's admin page: reports from players, and trainers hidden from
+       the Hall of Fame. It needs the ADMIN_TOKEN Worker secret (see README). -->
+  <main class="app admin">
+    <header class="masthead">
+      <h1 class="title">Daily Red admin</h1>
+    </header>
+
+    <form class="admin-login" id="login">
+      <label class="admin-label" for="token">Admin token</label>
+      <div class="admin-row">
+        <input class="admin-input" id="token" type="password" autocomplete="current-password" required>
+        <button class="button button-run" type="submit">Open</button>
+      </div>
+      <p class="admin-error" id="login-error" role="alert" hidden></p>
+    </form>
+
+    <section id="panel" hidden>
+      <div class="admin-bar">
+        <div class="admin-tabs" role="group" aria-label="Reports">
+          <button class="button button-quiet" id="show-open" type="button" aria-pressed="true">Open</button>
+          <button class="button button-quiet" id="show-closed" type="button" aria-pressed="false">Closed</button>
+        </div>
+        <button class="button button-quiet" id="refresh" type="button">Refresh</button>
+        <button class="button button-quiet" id="logout" type="button">Log out</button>
+      </div>
+      <p class="admin-summary" id="summary" role="status"></p>
+      <div class="admin-reports" id="reports"></div>
+
+      <h2 class="section-heading admin-hidden-heading">Hidden from the Hall of Fame</h2>
+      <ul class="admin-hidden" id="hidden"></ul>
+    </section>
+  </main>
+</body>
+</html>

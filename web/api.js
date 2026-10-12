@@ -63,3 +63,5 @@ export const getMe = (code) => call('GET', 'me', undefined, code);
 export const startBattle = (day, run) => call('POST', 'battles/start', { day, run });
 export const sendResult = (day, won, run) => call('POST', 'battles/result', { day, won, run });
 export const getHallOfFame = () => call('GET', 'halloffame');
+// {kind: 'result', player, note} or {kind: 'problem', note, context}
+export const sendReport = (report) => call('POST', 'reports', report);

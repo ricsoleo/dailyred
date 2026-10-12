@@ -12,7 +12,7 @@ import { createGameLink, PHASE, RESULT } from './game-link.js';
 import { loadSavedRom, saveRom, forgetRom, identifyRom, patchRom, RomError } from './rom-store.js';
 import { redSpriteUrl } from './red-sprite.js';
 import {
-  savedCode, saveCode, normalizeCode, serverNow, createPlayer, getMe, startBattle, sendResult, getHallOfFame,
+  savedCode, saveCode, normalizeCode, serverNow, createPlayer, getMe, startBattle, sendResult, getHallOfFame, sendReport,
 } from './api.js';
 
 const $ = (id) => document.getElementById(id);
@@ -60,6 +60,16 @@ const ui = {
   fameToday: $('fame-today'),
   fameWins: $('fame-wins'),
   fameStreaks: $('fame-streaks'),
+  trainerHidden: $('trainer-hidden'),
+  reportProblem: $('report-problem'),
+  reportDialog: $('report-dialog'),
+  reportForm: $('report-form'),
+  reportTitle: $('report-title'),
+  reportIntro: $('report-intro'),
+  reportNote: $('report-note'),
+  reportStatus: $('report-status'),
+  reportSend: $('report-send'),
+  reportCancel: $('report-cancel'),
 };
 
 // sessionStorage can throw when storage is blocked; the site works without it.
@@ -92,6 +102,7 @@ const practiceSeed = parseSeed(new URLSearchParams(location.search).get('seed'))
 
 let manifest = null; // game/patches.json
 let rom = null;      // the Daily Red ROM, patched from the player's own
+let romSource = null; // which ROM the player loaded (for problem reports)
 let me = null;       // { player, today } from the server
 let run = null;      // the day's battle being played: { day, id, battleSeen, start, result }
 let rematching = false; // a rematch with the day's team is being played (never reported)
@@ -192,6 +203,7 @@ function showRomCard(problem = '') {
 // a failed patch download doesn't mean picking the file again.
 async function usePlayerRom(bytes, { save = false } = {}) {
   const source = await identifyRom(bytes, manifest);
+  romSource = source.name;
   if (save) await saveRom(bytes);
   showLoading('Patching your ROM');
   rom = await patchRom(bytes, source, showProgress);
@@ -374,6 +386,8 @@ function renderTrainer() {
   if (!me) return;
   ui.trainerName.textContent = me.player.name;
   ui.trainerId.textContent = `#${me.player.id}`;
+  ui.trainerHidden.hidden = !me.player.hidden;
+  renderFame();
 }
 
 function showCodeBox(note) {
@@ -408,6 +422,28 @@ ui.changeRom.addEventListener('click', async () => {
 
 // --- Hall of fame --------------------------------------------------------------
 
+// Trainers this page has reported (the server keeps one open report each).
+const reported = new Set();
+
+const FLAG_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 15V1.5M3.5 2h9l-2.2 3.2L12.5 8.5h-9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+
+function reportButton(row) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'fame-report';
+  button.dataset.player = row.id;
+  button.innerHTML = FLAG_ICON;
+  if (reported.has(row.id)) {
+    button.disabled = true;
+    button.title = 'Reported';
+  } else {
+    button.title = 'Report suspicious results';
+  }
+  button.setAttribute('aria-label', `Report ${row.name} #${row.id}`);
+  button.addEventListener('click', () => openReport({ id: row.id, name: row.name }));
+  return button;
+}
+
 function fillList(list, rows, describe, empty) {
   list.replaceChildren();
   if (!rows.length) {
@@ -430,6 +466,8 @@ function fillList(list, rows, describe, empty) {
     value.className = 'fame-value';
     value.textContent = describe(row);
     li.append(name, id, value);
+    // Trainers can report others' results (not their own).
+    if (me && row.id !== me.player.id) li.append(reportButton(row));
     list.append(li);
   }
 }
@@ -437,15 +475,23 @@ function fillList(list, rows, describe, empty) {
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+let fame = null; // the latest Hall of Fame, redrawn when the trainer changes
+
 async function refreshHallOfFame() {
   if (practiceSeed) return;
-  let data;
   try {
-    data = await getHallOfFame();
+    fame = await getHallOfFame();
   } catch {
     ui.fameSummary.textContent = "The hall of fame couldn't be loaded.";
     return;
   }
+  renderFame();
+}
+
+// Your own rows are highlighted, and other trainers get a report flag.
+function renderFame() {
+  if (!fame) return;
+  const data = fame;
   const { played, won } = data.today;
   ui.fameSummary.textContent = played
     ? `Today ${won} of ${plural(played, 'trainer')} beat RED.`
@@ -462,6 +508,77 @@ setInterval(() => {
     refreshMe().then(() => { if (app.dataset.state === 'title') renderTitle(); }).catch(() => {});
   }
 }, 60000);
+
+// --- Reports ---------------------------------------------------------------------
+
+// A trainer's suspicious results ({id, name}), or a site problem (null).
+let reportTarget = null;
+
+function openReport(target) {
+  reportTarget = target;
+  ui.reportTitle.textContent = target ? `Report ${target.name} #${target.id}` : 'Report a problem';
+  ui.reportIntro.textContent = target
+    ? "Do this trainer's results look fake? The site's admin will check them and can take them out of the Hall of Fame."
+    : 'What went wrong? What the page was doing, and which browser you use, are sent along to help fix it.';
+  ui.reportNote.value = '';
+  ui.reportNote.placeholder = target ? 'What looks wrong? (optional)' : 'Describe what happened';
+  ui.reportNote.required = !target;
+  ui.reportNote.maxLength = target ? 300 : 1000;
+  ui.reportStatus.textContent = '';
+  ui.reportSend.disabled = false;
+  emu?.pause(); // typing shouldn't play the game
+  ui.reportDialog.showModal();
+}
+
+function markReported(id) {
+  reported.add(id);
+  for (const button of document.querySelectorAll(`.fame-report[data-player="${id}"]`)) {
+    button.disabled = true;
+    button.title = 'Reported';
+  }
+}
+
+// What the page is doing, sent with a problem report.
+function pageContext() {
+  return {
+    state: app.dataset.state,
+    error: app.dataset.state === 'error' ? ui.errorText.textContent : undefined,
+    rom: romSource ?? undefined,
+    trainer: me?.player.id,
+    day: me?.today.day,
+    battle: me?.today.status,
+    practice: practiceSeed ? true : undefined,
+    rematch: rematching || undefined,
+    page: location.pathname + location.search,
+    browser: navigator.userAgent,
+    window: `${innerWidth}x${innerHeight}`,
+  };
+}
+
+ui.reportForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const target = reportTarget;
+  ui.reportSend.disabled = true;
+  ui.reportStatus.textContent = 'Sending…';
+  try {
+    await sendReport(target
+      ? { kind: 'result', player: target.id, note: ui.reportNote.value }
+      : { kind: 'problem', note: ui.reportNote.value, context: pageContext() });
+    if (target) markReported(target.id);
+    ui.reportStatus.textContent = 'Thanks, your report was sent.';
+    setTimeout(() => ui.reportDialog.close(), 1200);
+  } catch (err) {
+    if (err.status === 409 && target) markReported(target.id);
+    ui.reportStatus.textContent = err.message;
+    ui.reportSend.disabled = err.status === 409;
+  }
+});
+
+ui.reportCancel.addEventListener('click', () => ui.reportDialog.close());
+ui.reportDialog.addEventListener('close', () => {
+  if (emu && !document.hidden) emu.resume();
+});
+onClick(ui.reportProblem, () => openReport(null));
 
 // --- Running the game --------------------------------------------------------------
 
@@ -734,6 +851,7 @@ document.addEventListener('fullscreenchange', () => {
 
 // Don't let arrow keys and space scroll the page while playing.
 window.addEventListener('keydown', (event) => {
+  if (event.target.closest?.('dialog, input, textarea')) return; // typing, not playing
   if (app.dataset.state === 'playing' && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
     event.preventDefault();
   }

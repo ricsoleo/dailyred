@@ -48,6 +48,9 @@ function freePort() {
   });
 }
 
+// The admin token the test site runs with (the real one is a Worker secret).
+export const ADMIN_TOKEN = 'test-admin-token';
+
 // Runs the whole website (static files + API, see server/) in wrangler's local
 // Workers runtime with a fresh, empty database. TEST_CLOCK=1 makes the server
 // take its clock from the X-Test-Now header, so tests can play several days.
@@ -59,7 +62,7 @@ export async function startSite() {
   const env = { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false', NO_COLOR: '1' };
   execFileSync(wrangler, ['d1', 'migrations', 'apply', 'DB', '--local', '--persist-to', state], { cwd: serverDir, env, stdio: 'pipe' });
   const port = await freePort();
-  const proc = spawn(wrangler, ['dev', '--ip', '127.0.0.1', '--port', String(port), '--persist-to', state, '--var', 'TEST_CLOCK:1'], {
+  const proc = spawn(wrangler, ['dev', '--ip', '127.0.0.1', '--port', String(port), '--persist-to', state, '--var', 'TEST_CLOCK:1', '--var', `ADMIN_TOKEN:${ADMIN_TOKEN}`], {
     cwd: serverDir, env, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';

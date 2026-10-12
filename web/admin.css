@@ -1,0 +1,97 @@
+/* The admin page (admin.html), on top of style.css. */
+
+.admin-login { display: flex; flex-direction: column; gap: 8px; max-width: 420px; }
+.admin-label { font-weight: 600; }
+.admin-row { display: flex; gap: 10px; }
+
+.admin-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  font: 16px var(--font-body);
+  color: var(--text);
+  background: transparent;
+}
+
+.admin-error { margin: 0; color: var(--crimson); }
+
+.admin-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-tabs { display: flex; gap: 8px; margin-right: auto; }
+.admin-tabs [aria-pressed="true"] { border-color: var(--text); }
+.admin-summary { margin: 16px 0; color: var(--muted); }
+.admin-reports { display: flex; flex-direction: column; gap: 14px; }
+
+.admin-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 2px solid var(--line);
+  border-left: 6px solid var(--muted);
+  border-radius: 10px;
+}
+
+.admin-card-result { border-left-color: var(--crimson); }
+
+.admin-card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.admin-kind { font: 600 17px/1.2 var(--font-pixel); }
+.admin-meta, .admin-status { font-size: 14px; color: var(--muted); }
+
+.admin-note {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-target { margin: 0; }
+
+.admin-badge {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: #fff;
+  background: var(--crimson);
+}
+
+.admin-battles { border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.admin-battles th, .admin-battles td { padding: 3px 14px 3px 0; text-align: left; }
+.admin-battles th { color: var(--muted); font-weight: 600; }
+.admin-battles .is-suspicious td { color: var(--crimson); font-weight: 600; }
+
+.admin-context {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font: 13px/1.45 ui-monospace, 'SF Mono', Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: color-mix(in srgb, var(--line) 40%, transparent);
+}
+
+.admin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.admin-hidden-heading { margin-top: 36px; }
+.admin-hidden { margin: 0; padding: 0; list-style: none; }
+
+.admin-hidden-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-empty { color: var(--muted); }

@@ -3,7 +3,7 @@
 // one battle per day, results, abandoned battles, streaks across days, battles
 // that cross midnight and the hall of fame. Takes about 10 seconds; no ROM or
 // browser needed.
-import { startSite } from './lib.mjs';
+import { startSite, ADMIN_TOKEN } from './lib.mjs';
 import { dailySeed } from '../server/src/index.js';
 
 let failures = 0;
@@ -16,9 +16,10 @@ const site = await startSite();
 let clock = '2026-10-11T10:00:00Z';
 const at = (day, time = '10:00:00') => { clock = `${day}T${time}Z`; };
 
-async function api(method, path, { body, code } = {}) {
+async function api(method, path, { body, code, admin } = {}) {
   const headers = { 'X-Test-Now': clock };
   if (code) headers.Authorization = `Bearer ${code}`;
+  if (admin) headers['X-Admin-Token'] = admin;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(`${site.url}/api/${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: res.status, ...(await res.json()) };
@@ -162,6 +163,54 @@ try {
   const daveToday = await start(dave.code, D7);
   const dave7 = await me(dave.code);
   check(daveToday.status === 200 && dave7.player.losses === 1 && dave7.today.status === 'running', "yesterday's unfinished battle becomes a loss when today's starts");
+
+  // --- Reports and the admin ------------------------------------------------------
+  const D8 = '2026-10-18';
+  at(D8);
+  const report = (code, body) => api('POST', 'reports', { code, body });
+  const reportResult = (code, player, note) => report(code, { kind: 'result', player, note });
+  check((await reportResult(undefined, bob.player.id)).status === 401, 'reporting a result needs a trainer');
+  check((await reportResult(A, alice.player.id)).status === 400, "trainers can't report themselves");
+  check((await reportResult(A, 'ZZZZZZ')).status === 404, 'reporting an unknown trainer is refused');
+  check((await reportResult(A, bob.player.id, 'Three wins in a row, each in 20 seconds?')).status === 201, "Alice reports Bob's results");
+  check((await reportResult(A, bob.player.id)).status === 409, 'the same trainer can only be reported once while the report is open');
+  check((await reportResult(C, bob.player.id)).status === 201, 'Carol reports Bob too');
+  check((await report(undefined, { kind: 'problem', note: 'x' })).status === 400, 'a problem report needs a few words');
+  const problem = await report(undefined, { kind: 'problem', note: 'The game froze after RED sent Snorlax', context: { state: 'playing', rom: 'Pokémon FireRed (USA) v1.0' } });
+  check(problem.status === 201, 'anyone can report a site problem, even without a trainer');
+  check((await report(A, { kind: 'compliment' })).status === 400, 'unknown report kinds are refused');
+
+  const admin = (method, path, body, token = ADMIN_TOKEN) => api(method, `admin/${path}`, { body, admin: token });
+  check((await api('GET', 'admin/reports')).status === 401, 'the admin list needs the admin token');
+  check((await admin('GET', 'reports', undefined, 'guess')).status === 401, 'a wrong admin token is refused');
+  let open = await admin('GET', 'reports');
+  const bobReports = open.reports.filter((r) => r.kind === 'result');
+  check(open.status === 200 && open.reports.length === 3 && bobReports.length === 2, `the admin sees 3 open reports (${open.reports?.length})`);
+  const bobTarget = bobReports[0]?.target;
+  check(bobTarget?.id === bob.player.id && bobTarget.wins === 3 && bobTarget.battles.length === 3 && bobTarget.battles.every((b) => b.result === 'won' && typeof b.seconds === 'number'),
+    'each result report shows the trainer with their recent battles and how long they took');
+  check(bobReports.some((r) => r.note === 'Three wins in a row, each in 20 seconds?' && r.reporter?.name === 'Alice'), 'with the note and who reported it');
+  const problemReport = open.reports.find((r) => r.kind === 'problem');
+  check(problemReport?.context?.state === 'playing' && problemReport.reporter === null, "problem reports keep the page's context");
+  check(!JSON.stringify(open).includes('client_hash') && !JSON.stringify(open).includes('token_hash'), 'the admin list leaks no hashes');
+
+  check((await admin('POST', `players/${bob.player.id}`, { hidden: true })).status === 200, 'the admin hides Bob from the Hall of Fame');
+  hof = await fame();
+  check(!hof.wins.some((r) => r.id === bob.player.id), 'Bob is no longer in Most wins');
+  check((await me(B)).player.hidden === true, 'Bob can see that he was hidden');
+  open = await admin('GET', 'reports');
+  check(open.reports.length === 1 && open.reports[0].kind === 'problem', "hiding Bob resolves the reports about him");
+  check(open.hidden.some((p) => p.id === bob.player.id), 'Bob is listed as hidden');
+  check((await admin('POST', `reports/${problemReport.id}`, { status: 'dismissed' })).status === 200, 'the admin dismisses the problem report');
+  check((await admin('POST', `reports/${problemReport.id}`, { status: 'dismissed' })).status === 404, 'a closed report cannot be closed again');
+  const closed = await admin('GET', 'reports?status=closed');
+  check(closed.reports.length === 3 && closed.reports.every((r) => r.status !== 'open' && r.closedAt), 'closed reports are kept, with when they were closed');
+  check((await admin('POST', `players/${bob.player.id}`, { hidden: false })).status === 200, 'the admin restores Bob');
+  check((await fame()).wins.some((r) => r.id === bob.player.id), 'Bob is back in Most wins');
+  check((await reportResult(A, bob.player.id)).status === 201, 'once the report was closed, Bob can be reported again');
+  let limited = 0;
+  for (let i = 0; i < 8; i++) limited = (await report(undefined, { kind: 'problem', note: `Problem number ${i}` })).status;
+  check(limited === 429, 'at most 10 reports a day from one visitor');
 
   check((await api('GET', 'nothing')).status === 404, 'unknown API paths are 404');
   check((await api('POST', 'players', { body: 'x'.repeat(2000) })).status === 413, 'oversized bodies are refused');

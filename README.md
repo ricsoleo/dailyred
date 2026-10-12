@@ -177,6 +177,18 @@ no game art either. Rebuild the patches after every ROM change.
 - **Hall of Fame** (under the game): today's champions in the order they beat
   RED, the most wins of all time, and the longest win streaks still alive.
   Your own rows are highlighted.
+- **Reports:** trainers can flag another trainer's results as suspicious (the
+  flag at the end of their Hall of Fame row, with an optional note), and
+  anyone can report a site problem (**Report a problem** in the footer; the
+  page's state, the ROM version and the browser are sent along). Each
+  visitor can send 10 reports a day, and a trainer can only have one open
+  report from the same reporter.
+- **Admin page** (`/admin.html`, not linked anywhere): with the admin token it
+  lists open and closed reports. A result report shows the trainer's totals
+  and recent battles with how long each took (wins under 90 seconds are
+  highlighted: a real battle against RED takes minutes). From there the
+  admin hides a trainer from the Hall of Fame (they can still play, and their
+  trainer card says so), restores one, or dismisses or resolves a report.
 
 | API | |
 |---|---|
@@ -186,8 +198,14 @@ no game art either. Rebuild the patches after every ROM change.
 | `POST /api/battles/start {day, run}` | RED's battle began (409 if you already played today) |
 | `POST /api/battles/result {day, won, run}` | the result (409 if that run has no battle running) |
 | `GET /api/halloffame` | today's champions, most wins, win streaks |
+| `POST /api/reports {kind, player?, note, context?}` | `result` (trainers only) or `problem` |
+| `GET /api/admin/reports?status=open\|closed` | admin: reports and hidden trainers |
+| `POST /api/admin/reports/<id> {status}` | admin: `dismissed` or `resolved` |
+| `POST /api/admin/players/<id> {hidden}` | admin: hide from (or restore to) the Hall of Fame |
 
-Authenticated calls send `Authorization: Bearer <recovery code>`.
+Authenticated calls send `Authorization: Bearer <recovery code>`; admin calls
+send `X-Admin-Token: <ADMIN_TOKEN>`, a Worker secret. Without the secret the
+admin API doesn't exist.
 
 **Results are taken on trust.** The battle runs in the player's browser, so the
 server can enforce one battle a day per trainer, but it can't tell a real win
@@ -388,7 +406,9 @@ from the same run accepted, other runs refused), results for the wrong day,
 without a start or from another run refused, battles abandoned for 2 hours
 becoming losses, win and day streaks across days (and their reset after a
 missed day), the best streak, battles that cross midnight or start just
-after it, and the Hall of Fame lists.
+after it, the Hall of Fame lists, and reports: who can send them, one open
+report per reporter and trainer, the daily limit, the admin token, the admin
+list (no hashes leaked), hiding and restoring a trainer, and closing reports.
 
 `npm run bps` checks that patches from `make-bps.mjs` apply with `bps.js`
 (copies, moved blocks, runs, growth, shrinking) and that damaged patches and
@@ -432,7 +452,9 @@ day's team (a loss and a win, neither counted), the same team for a second
 trainer on v1.1, a loss the next day, opening the site on a second device
 mid-battle (shown as under way, not forfeited), reloading mid-battle (a
 loss), a missed day (streaks reset), and a practice run (`?seed=`, not
-recorded). It then
+recorded). On the first day it also reports a trainer with an instant win
+from the Hall of Fame, reports a problem typed while a rematch is running,
+and uses the admin page to hide that trainer. It then
 brings the trainer to another browser with the recovery code, changes ROM,
 checks the 3× (720×480) screen, RED's sprite, the phone layout of every card
 and the touch d-pad, and the download-error screen with "Try again".
@@ -455,9 +477,13 @@ database in `server/.wrangler/`. `web/` is about 6 MB:
 
 ```
 web/index.html  app.js  api.js  bps.js  rom-store.js  red-sprite.js  game-link.js  game-files.js  rom-config.js  style.css  favicon.svg  licenses.txt
+web/admin.html  admin.js  admin.css
 web/vendor/     emulator (3.4 MB) + font
 web/game/       firered-v1.0.bps.gz, firered-v1.1.bps.gz (1.2 MB each), patches.json
 ```
+
+For the admin page locally, put a token in `server/.dev.vars`
+(`ADMIN_TOKEN=anything`; the file is gitignored) and restart the dev server.
 
 After rebuilding the ROM, run `scripts/build-patches.sh` again and reload the
 page. Loading `pokefirered/pokefirered_modern.gba` itself as "your ROM" also
@@ -475,6 +501,7 @@ doesn't charge for bandwidth on static files. Once:
 cd server
 npx wrangler login
 npx wrangler d1 create dailyred    # paste the database_id into wrangler.jsonc
+openssl rand -base64 32 | tr -d '\n' | npx wrangler secret put ADMIN_TOKEN   # keep a copy: it opens /admin.html
 ```
 
 Then, after building the patches, each deploy is `npm run deploy` in
@@ -507,7 +534,9 @@ footer links to it.
 - **Results are reported by the browser** and taken on trust (see
   [Trainers, the server and the Hall of Fame](#trainers-the-server-and-the-hall-of-fame)):
   a determined player can send a fake win, or play with a modified ROM.
-  Anyone can also create many trainers; there's no rate limit yet.
+  Reports help: the admin page shows how long each reported win took and can
+  hide a trainer from the Hall of Fame. Anyone can also create many trainers;
+  there's no rate limit on that yet.
 - **Only FireRed (USA) v1.0 and v1.1:** those are the releases pret's
   decompilation can build, so they're the only ones a patch can be made from.
   Other languages and LeafGreen are refused with a message.

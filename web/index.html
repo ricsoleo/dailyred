@@ -99,6 +99,7 @@
 
     <section class="trainer" id="trainer" aria-label="Your trainer" hidden>
       <p class="trainer-line">Trainer <strong class="trainer-name" id="trainer-name"></strong> <span class="trainer-id" id="trainer-id"></span></p>
+      <p class="trainer-note" id="trainer-hidden" hidden>After a review of reports, your results are left out of the Hall of Fame.</p>
       <button class="button button-quiet" id="show-code" type="button">Recovery code</button>
       <div class="code-box" id="code-box" hidden>
         <p class="code-note" id="code-note"></p>
@@ -143,9 +144,22 @@
 
     <footer class="footer">
       <p>Daily Red is a free, unofficial fan project. It isn't affiliated with or endorsed by Nintendo, Creatures Inc., GAME FREAK inc. or The Pokémon Company. Pokémon and all game content are © Nintendo, Creatures Inc. and GAME FREAK inc.</p>
-      <p><a href="licenses.txt">Licenses</a> · <a href="https://github.com/amoi-builds/dailyred">Source</a></p>
+      <p><a href="licenses.txt">Licenses</a> · <a href="https://github.com/amoi-builds/dailyred">Source</a> · <button class="link-inline" id="report-problem" type="button">Report a problem</button></p>
       <p class="credit">Daily Red was created by amoi-builds: <a href="https://github.com/amoi-builds/dailyred">github.com/amoi-builds/dailyred</a></p>
     </footer>
   </main>
+
+  <dialog class="report-dialog" id="report-dialog" aria-labelledby="report-title">
+    <form class="report-form" id="report-form">
+      <h2 class="report-title" id="report-title"></h2>
+      <p class="report-intro" id="report-intro"></p>
+      <textarea class="report-note" id="report-note" rows="4" aria-labelledby="report-title"></textarea>
+      <p class="report-status" id="report-status" role="status"></p>
+      <div class="report-actions">
+        <button class="button button-quiet" id="report-cancel" type="button">Cancel</button>
+        <button class="button button-run" id="report-send" type="submit">Send report</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

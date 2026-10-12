@@ -9,7 +9,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  ROOT, startSite, launchBrowser, sleep, press, getStatus, waitFor, startRedBattle, forceWin, forceLoss,
+  ROOT, ADMIN_TOKEN, startSite, launchBrowser, sleep, press, getStatus, waitFor, startRedBattle, forceWin, forceLoss,
 } from './lib.mjs';
 import { readParty } from './party.mjs';
 
@@ -199,6 +199,70 @@ try {
   check((await todayOnServer(page)) === 'won', "the server still has the day's win");
   f = await fame(page);
   check(f.today.length === 1 && f.summary === 'Today 1 of 1 trainer beat RED.', 'rematches stay out of the Hall of Fame');
+
+  // --- Reports and the admin page --------------------------------------------------
+  // Zed, made through the API, "wins" in no time: Alice reports him.
+  const apiPost = async (path, body, auth) => (await fetch(`${site.url}/api/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Test-Now': `${DAY1}T10:30:00Z`, ...(auth ? { Authorization: `Bearer ${auth}` } : {}) },
+    body: JSON.stringify(body),
+  })).json();
+  const zed = await apiPost('players', { name: 'Zed' });
+  await apiPost('battles/start', { day: DAY1, run: 'zed-run-0001' }, zed.code);
+  await apiPost('battles/result', { day: DAY1, won: true, run: 'zed-run-0001' }, zed.code);
+  await page.reload();
+  await waitState(page, 'title');
+  await page.waitForFunction(() => document.querySelectorAll('#fame-today li:not(.fame-empty)').length === 2);
+  const flags = await page.evaluate(() => [...document.querySelectorAll('#fame-today li')].map((li) => ({ name: li.querySelector('.fame-name').textContent, flag: Boolean(li.querySelector('.fame-report')) })));
+  check(flags.find((r) => r.name === 'Zed')?.flag && !flags.find((r) => r.name === 'Alice')?.flag, 'a report flag next to other trainers, not next to yourself');
+  const zedFlag = `#fame-today .fame-report[data-player="${zed.player.id}"]`;
+  await page.click(zedFlag);
+  await page.waitForSelector('#report-dialog[open]');
+  check((await page.locator('#report-title').textContent()) === `Report Zed #${zed.player.id}`, 'the report dialog names the trainer');
+  await page.fill('#report-note', 'Won in a few seconds');
+  await page.screenshot({ path: `${OUT}/site-report.png` });
+  await page.click('#report-send');
+  await page.waitForFunction(() => !document.getElementById('report-dialog').open, null, { timeout: 5000 });
+  check(await page.locator(zedFlag).isDisabled(), 'after reporting, the flag is greyed out');
+
+  // A site problem, typed while a rematch is running.
+  await page.click('#play-again');
+  await attach(page);
+  await page.click('#report-problem');
+  await page.waitForSelector('#report-dialog[open]');
+  await page.locator('#report-note').pressSequentially('The game is slow on my laptop', { delay: 20 });
+  check((await page.inputValue('#report-note')) === 'The game is slow on my laptop', 'typing a problem report works while the game is running');
+  await page.click('#report-send');
+  await page.waitForFunction(() => !document.getElementById('report-dialog').open, null, { timeout: 5000 });
+  check(true, 'the problem report is sent');
+  await page.reload(); // leaving a rematch is fine: it isn't reported
+  await waitState(page, 'title');
+
+  const adminPage = await context.newPage();
+  await adminPage.goto(`${site.url}/admin.html`);
+  await adminPage.fill('#token', 'wrong');
+  await adminPage.click('#login button[type=submit]');
+  await adminPage.waitForFunction(() => !document.getElementById('login-error').hidden);
+  check(await adminPage.locator('#panel').isHidden(), 'the admin page refuses a wrong token');
+  await adminPage.fill('#token', ADMIN_TOKEN);
+  await adminPage.click('#login button[type=submit]');
+  await adminPage.waitForFunction(() => !document.getElementById('panel').hidden && document.querySelectorAll('.admin-card').length > 0);
+  const cards = await adminPage.evaluate(() => [...document.querySelectorAll('.admin-card')].map((c) => c.textContent));
+  check(cards.length === 2
+    && cards.some((t) => /Suspicious result/.test(t) && /Zed/.test(t) && /Won in a few seconds/.test(t) && /Alice/.test(t))
+    && cards.some((t) => /Site problem/.test(t) && /slow on my laptop/.test(t) && /"state": "playing"/.test(t)),
+  'the admin page lists both reports with their details');
+  check((await adminPage.locator('.admin-battles .is-suspicious').count()) === 1, "Zed's instant win is highlighted");
+  await adminPage.screenshot({ path: `${OUT}/site-admin.png`, fullPage: true });
+  await adminPage.click('text=Hide from the Hall of Fame');
+  await adminPage.waitForFunction(() => /Zed/.test(document.getElementById('hidden').textContent));
+  check(true, 'the admin hides Zed from the Hall of Fame');
+  await adminPage.close();
+  await page.reload();
+  await waitState(page, 'title');
+  await page.waitForFunction(() => /Today 1 of 1 trainer/.test(document.getElementById('fame-summary').textContent));
+  f = await fame(page);
+  check(f.today.length === 1 && f.today[0].name === 'Alice', 'Zed is gone from the Hall of Fame');
 
   await page.reload();
   await waitState(page, 'title');

@@ -7,6 +7,14 @@
 //   POST  /api/battles/start    (auth) {day, run}      -> {today}  RED's battle began
 //   POST  /api/battles/result   (auth) {day, won, run} -> {player, today}
 //   GET   /api/halloffame                     -> today's winners, most wins, win streaks
+//   POST  /api/reports  (auth) {kind: 'result', player, note}  a trainer's results look fake
+//   POST  /api/reports  (auth optional) {kind: 'problem', note, context}  the site misbehaved
+//
+//   Admin, with the header `X-Admin-Token: <ADMIN_TOKEN>` (a Worker secret;
+//   without it these don't exist):
+//   GET   /api/admin/reports?status=open|closed  -> {reports, hidden}
+//   POST  /api/admin/reports/<id>   {status: 'dismissed' | 'resolved'}
+//   POST  /api/admin/players/<id>   {hidden}   leave a trainer out of the Hall of Fame (or not)
 //
 // "auth" is the header `Authorization: Bearer <recovery code>`. `run` is a
 // random ID the page picks for each battle: repeating a start with the same
@@ -28,6 +36,8 @@ const START_GRACE_MS = 30 * 60 * 1000;
 const SETTLE_BATCH = 10; // abandoned battles settled per Hall of Fame request
 const BOARD_SIZE = 20;
 const TODAY_SIZE = 100;
+const REPORTS_PER_DAY = 10;   // per visitor (IP), both kinds together
+const ADMIN_BATTLES = 14;     // recent battles shown with a reported trainer
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'; // Crockford base32: no I, L, O, U
 
 // --- Days and seeds ----------------------------------------------------------------
@@ -96,6 +106,7 @@ function publicPlayer(row, today) {
     winStreak: alive ? row.win_streak : 0,
     dayStreak: alive ? row.day_streak : 0,
     bestWinStreak: row.best_win_streak,
+    hidden: Boolean(row.hidden),
   };
 }
 
@@ -162,9 +173,9 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
   headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
 });
 
-async function readBody(request) {
+async function readBody(request, maxLength = 1000) {
   const text = await request.text();
-  if (text.length > 1000) throw new HttpError(413, 'Request too large.');
+  if (text.length > maxLength) throw new HttpError(413, 'Request too large.');
   try {
     const body = JSON.parse(text || '{}');
     if (body && typeof body === 'object' && !Array.isArray(body)) return body;
@@ -184,6 +195,31 @@ async function requirePlayer(db, request) {
 }
 
 const reloadPlayer = (db, id) => db.prepare('SELECT * FROM players WHERE id = ?').bind(id).first();
+
+// Admin calls need the ADMIN_TOKEN secret. Comparing digests keeps the
+// comparison's timing independent of the token.
+async function requireAdmin(env, request) {
+  if (!env.ADMIN_TOKEN) throw new HttpError(404, 'Not found.');
+  const given = request.headers.get('X-Admin-Token') ?? '';
+  if ((await sha256(given)) !== (await sha256(env.ADMIN_TOKEN))) throw new HttpError(401, 'Wrong admin token.');
+}
+
+// Reports are limited per visitor and day; the IP is only kept as a hash.
+async function clientHash(request, now) {
+  return sha256(`${request.headers.get('CF-Connecting-IP') ?? 'local'}|${dayOf(now)}`);
+}
+
+function cleanNote(text, max) {
+  return String(text ?? '').normalize('NFC').replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').trim().slice(0, max);
+}
+
+const parseJson = (text) => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
 
 const routes = {
   async 'POST /api/players'({ db, request, now }) {
@@ -260,12 +296,12 @@ const routes = {
     const day = dayOf(now);
     const [today, counts, wins, streaks] = await db.batch([
       db.prepare(`SELECT p.id, p.name, b.finished_at AS at FROM battles b JOIN players p ON p.id = b.player_id
-                  WHERE b.day = ? AND b.result = 'won' ORDER BY b.finished_at LIMIT ${TODAY_SIZE}`).bind(day),
-      db.prepare(`SELECT COUNT(*) AS played, COUNT(CASE WHEN result = 'won' THEN 1 END) AS won FROM battles
-                  WHERE day = ? AND result IS NOT NULL`).bind(day),
-      db.prepare(`SELECT id, name, wins, losses FROM players WHERE wins > 0
+                  WHERE b.day = ? AND b.result = 'won' AND p.hidden = 0 ORDER BY b.finished_at LIMIT ${TODAY_SIZE}`).bind(day),
+      db.prepare(`SELECT COUNT(*) AS played, COUNT(CASE WHEN b.result = 'won' THEN 1 END) AS won FROM battles b
+                  JOIN players p ON p.id = b.player_id WHERE b.day = ? AND b.result IS NOT NULL AND p.hidden = 0`).bind(day),
+      db.prepare(`SELECT id, name, wins, losses FROM players WHERE wins > 0 AND hidden = 0
                   ORDER BY wins DESC, losses ASC, created_at ASC LIMIT ${BOARD_SIZE}`),
-      db.prepare(`SELECT id, name, win_streak AS streak FROM players WHERE win_streak > 0 AND last_result = 'won' AND last_day >= ?
+      db.prepare(`SELECT id, name, win_streak AS streak FROM players WHERE win_streak > 0 AND last_result = 'won' AND last_day >= ? AND hidden = 0
                   ORDER BY win_streak DESC, last_day DESC, created_at ASC LIMIT ${BOARD_SIZE}`).bind(addDays(day, -1)),
     ]);
     return json({
@@ -275,18 +311,134 @@ const routes = {
       streaks: streaks.results,
     });
   },
+
+  async 'POST /api/reports'({ db, request, now }) {
+    const body = await readBody(request, 4000);
+    const reporter = await authenticate(db, request);
+    const client = await clientHash(request, now);
+    const sent = await db.prepare('SELECT COUNT(*) AS n FROM reports WHERE client_hash = ?').bind(client).first();
+    if (sent.n >= REPORTS_PER_DAY) throw new HttpError(429, "That's a lot of reports for one day. Try again tomorrow.");
+
+    if (body.kind === 'result') {
+      if (!reporter) throw new HttpError(401, 'Only trainers can report results.');
+      const target = typeof body.player === 'string' && await reloadPlayer(db, body.player);
+      if (!target) throw new HttpError(404, 'No such trainer.');
+      if (target.id === reporter.id) throw new HttpError(400, "You can't report yourself.");
+      const insert = await db.prepare(`INSERT OR IGNORE INTO reports (kind, reporter_id, target_id, note, client_hash, created_at)
+                                       VALUES ('result', ?, ?, ?, ?, ?)`)
+        .bind(reporter.id, target.id, cleanNote(body.note, 300), client, now.toISOString()).run();
+      if (insert.meta.changes !== 1) throw new HttpError(409, "You've already reported this trainer.");
+      return json({ ok: true }, 201);
+    }
+
+    if (body.kind === 'problem') {
+      const note = cleanNote(body.note, 1000);
+      if (note.length < 3) throw new HttpError(400, 'Describe the problem in a few words.');
+      const context = body.context && typeof body.context === 'object' ? JSON.stringify(body.context).slice(0, 2000) : null;
+      await db.prepare(`INSERT INTO reports (kind, reporter_id, note, context, client_hash, created_at)
+                        VALUES ('problem', ?, ?, ?, ?, ?)`)
+        .bind(reporter?.id ?? null, note, context, client, now.toISOString()).run();
+      return json({ ok: true }, 201);
+    }
+
+    throw new HttpError(400, "Expected kind 'result' or 'problem'.");
+  },
+
+  async 'GET /api/admin/reports'({ db, env, request, url }) {
+    await requireAdmin(env, request);
+    const open = url.searchParams.get('status') !== 'closed';
+    const { results: rows } = await db.prepare(`SELECT r.*, rp.name AS reporter_name FROM reports r
+        LEFT JOIN players rp ON rp.id = r.reporter_id
+        WHERE ${open ? "r.status = 'open'" : "r.status != 'open'"} ORDER BY r.created_at DESC LIMIT 200`).all();
+
+    // Each reported trainer once, with their recent battles: a win reported
+    // seconds after the battle started is a giveaway.
+    const targets = {};
+    for (const id of new Set(rows.map((r) => r.target_id).filter(Boolean))) {
+      const [player, battles] = await db.batch([
+        db.prepare('SELECT * FROM players WHERE id = ?').bind(id),
+        db.prepare(`SELECT day, started_at, finished_at, result FROM battles WHERE player_id = ? ORDER BY day DESC LIMIT ${ADMIN_BATTLES}`).bind(id),
+      ]);
+      const row = player.results[0];
+      targets[id] = {
+        id: row.id,
+        name: row.name,
+        wins: row.wins,
+        losses: row.losses,
+        winStreak: row.win_streak,
+        bestWinStreak: row.best_win_streak,
+        hidden: Boolean(row.hidden),
+        battles: battles.results.map((b) => ({
+          day: b.day,
+          result: b.result,
+          seconds: b.finished_at ? Math.round((Date.parse(b.finished_at) - Date.parse(b.started_at)) / 1000) : null,
+        })),
+      };
+    }
+    const { results: hidden } = await db.prepare('SELECT id, name, wins, losses FROM players WHERE hidden = 1 ORDER BY name').all();
+    return json({
+      reports: rows.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        status: r.status,
+        createdAt: r.created_at,
+        closedAt: r.closed_at,
+        note: r.note,
+        context: r.context ? parseJson(r.context) : null,
+        reporter: r.reporter_id ? { id: r.reporter_id, name: r.reporter_name } : null,
+        target: r.target_id ? targets[r.target_id] : null,
+      })),
+      hidden,
+    });
+  },
 };
+
+// Admin routes with an ID in the path.
+const idRoutes = [
+  [/^\/api\/admin\/reports\/(\d+)$/, 'POST', async ({ db, env, request, now }, id) => {
+    await requireAdmin(env, request);
+    const { status } = await readBody(request);
+    if (status !== 'dismissed' && status !== 'resolved') throw new HttpError(400, "Expected status 'dismissed' or 'resolved'.");
+    const update = await db.prepare("UPDATE reports SET status = ?, closed_at = ? WHERE id = ? AND status = 'open'")
+      .bind(status, now.toISOString(), Number(id)).run();
+    if (update.meta.changes !== 1) throw new HttpError(404, 'No such open report.');
+    return json({ ok: true });
+  }],
+  [/^\/api\/admin\/players\/([0-9A-Z]{6})$/, 'POST', async ({ db, env, request, now }, id) => {
+    await requireAdmin(env, request);
+    const { hidden } = await readBody(request);
+    if (typeof hidden !== 'boolean') throw new HttpError(400, 'Expected {hidden}.');
+    const update = await db.prepare('UPDATE players SET hidden = ? WHERE id = ?').bind(hidden ? 1 : 0, id).run();
+    if (update.meta.changes !== 1) throw new HttpError(404, 'No such trainer.');
+    // Hiding a trainer answers the open reports about them.
+    if (hidden) {
+      await db.prepare("UPDATE reports SET status = 'resolved', closed_at = ? WHERE target_id = ? AND status = 'open'")
+        .bind(now.toISOString(), id).run();
+    }
+    return json({ ok: true });
+  }],
+];
+
+function findRoute(method, path) {
+  const exact = routes[`${method} ${path}`];
+  if (exact) return { handler: exact, args: [] };
+  for (const [pattern, routeMethod, handler] of idRoutes) {
+    const match = method === routeMethod && path.match(pattern);
+    if (match) return { handler, args: match.slice(1) };
+  }
+  return null;
+}
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const handler = routes[`${request.method} ${url.pathname}`];
-    if (!handler) return json({ error: 'Not found.' }, 404);
+    const route = findRoute(request.method, url.pathname);
+    if (!route) return json({ error: 'Not found.' }, 404);
     // Tests can set the server's clock (only when TEST_CLOCK=1, never in production).
     const testNow = env.TEST_CLOCK === '1' && request.headers.get('X-Test-Now');
     const now = testNow ? new Date(testNow) : new Date();
     try {
-      return await handler({ db: env.DB, request, now });
+      return await route.handler({ db: env.DB, env, request, url, now }, ...route.args);
     } catch (err) {
       if (err instanceof HttpError) return json({ error: err.message }, err.status);
       console.error(err);
