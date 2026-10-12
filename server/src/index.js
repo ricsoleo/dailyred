@@ -432,6 +432,10 @@ function findRoute(method, path) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const verification = env.GOOGLE_SITE_VERIFICATION;
+    if (verification && url.pathname === `/${verification}.html`) {
+      return new Response(`google-site-verification: ${verification}.html`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
     const route = findRoute(request.method, url.pathname);
     if (!route) return json({ error: 'Not found.' }, 404);
     // Tests can set the server's clock (only when TEST_CLOCK=1, never in production).

@@ -9,7 +9,12 @@
   "compatibility_date": "2026-09-01",
   "assets": {
     "directory": "../web",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/googlea1d6c2d15eaf091e.html"]
+  },
+  // Google Search Console's ownership file, served by the Worker at its exact
+  // path (static .html files get redirected to the path without .html).
+  "vars": {
+    "GOOGLE_SITE_VERIFICATION": "googlea1d6c2d15eaf091e"
   },
   "d1_databases": [
     {
