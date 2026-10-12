@@ -113,20 +113,14 @@
     <section class="fame" id="fame" aria-labelledby="fame-heading">
       <h2 class="section-heading" id="fame-heading">Hall of Fame</h2>
       <p class="fame-summary" id="fame-summary">Loading…</p>
-      <div class="fame-boards">
-        <div class="fame-board">
-          <h3 class="fame-title">Today's champions</h3>
-          <ol class="fame-list" id="fame-today"></ol>
-        </div>
-        <div class="fame-board">
-          <h3 class="fame-title">Most wins</h3>
-          <ol class="fame-list" id="fame-wins"></ol>
-        </div>
-        <div class="fame-board">
-          <h3 class="fame-title">Win streaks</h3>
-          <ol class="fame-list" id="fame-streaks"></ol>
-        </div>
+      <div class="fame-tabs" role="tablist" aria-label="Hall of Fame lists">
+        <button class="fame-tab" id="tab-today" type="button" role="tab" aria-controls="fame-today" aria-selected="true">Today's champions</button>
+        <button class="fame-tab" id="tab-wins" type="button" role="tab" aria-controls="fame-wins" aria-selected="false" tabindex="-1">Most wins</button>
+        <button class="fame-tab" id="tab-streaks" type="button" role="tab" aria-controls="fame-streaks" aria-selected="false" tabindex="-1">Win streaks</button>
       </div>
+      <ol class="fame-list" id="fame-today" role="tabpanel" aria-labelledby="tab-today"></ol>
+      <ol class="fame-list" id="fame-wins" role="tabpanel" aria-labelledby="tab-wins" hidden></ol>
+      <ol class="fame-list" id="fame-streaks" role="tabpanel" aria-labelledby="tab-streaks" hidden></ol>
       <p class="fame-note">Only each trainer's first battle of the day counts; rematches don't. A new day starts at midnight UTC. Results are reported by each player's browser.</p>
     </section>
 

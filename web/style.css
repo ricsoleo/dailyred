@@ -541,16 +541,27 @@ a { color: inherit; text-underline-offset: 3px; }
 
 .fame-summary { margin: 0 0 18px; color: var(--muted); }
 
-.fame-boards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px;
+.fame-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-bottom: 8px;
+  border-bottom: 2px solid var(--line);
 }
 
-.fame-title {
-  margin: 0 0 6px;
-  font: 600 17px/1.2 var(--font-pixel);
+.fame-tab {
+  margin-bottom: -2px;
+  padding: 8px 2px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font: 600 16px/1.2 var(--font-pixel);
+  color: var(--muted);
+  background: none;
+  cursor: pointer;
 }
+
+.fame-tab:hover { color: var(--text); }
+.fame-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--crimson); }
 
 .fame-list {
   margin: 0;
@@ -562,8 +573,8 @@ a { color: inherit; text-underline-offset: 3px; }
 .fame-list li {
   display: flex;
   align-items: baseline;
-  gap: 6px;
-  padding: 6px 4px;
+  gap: 10px;
+  padding: 8px 4px;
   border-bottom: 1px solid var(--line);
   counter-increment: rank;
 }
@@ -583,12 +594,18 @@ a { color: inherit; text-underline-offset: 3px; }
   background: color-mix(in srgb, var(--crimson) 12%, transparent);
 }
 
-.fame-name {
+.fame-who {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.fame-name {
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .fame-value {
@@ -721,5 +738,4 @@ kbd {
   .card-note { font-size: 13px; }
   .card-error .button-play { padding: 12px 32px; font-size: 22px; }
   .toolbar .button { padding: 10px 14px; font-size: 16px; }
-  .fame-boards { grid-template-columns: minmax(0, 1fr); gap: 20px; }
 }

@@ -456,21 +456,55 @@ function fillList(list, rows, describe, empty) {
   for (const row of rows) {
     const li = document.createElement('li');
     if (row.id === me?.player.id) li.classList.add('is-me');
+    // Name and ID together, so a long name wraps instead of being cut off.
+    const who = document.createElement('span');
+    who.className = 'fame-who';
     const name = document.createElement('span');
     name.className = 'fame-name';
     name.textContent = row.name;
     const id = document.createElement('span');
     id.className = 'fame-id';
     id.textContent = `#${row.id}`;
+    who.append(name, id);
     const value = document.createElement('span');
     value.className = 'fame-value';
     value.textContent = describe(row);
-    li.append(name, id, value);
+    li.append(who, value);
     // Trainers can report others' results (not their own).
     if (me && row.id !== me.player.id) li.append(reportButton(row));
     list.append(li);
   }
 }
+
+// One list at a time, full width. The choice is remembered in this browser.
+const FAME_TAB_KEY = 'dailyred-fame-tab';
+const fameTabs = [...document.querySelectorAll('.fame-tab')];
+
+function showFameTab(tab, focus = false) {
+  for (const t of fameTabs) {
+    const selected = t === tab;
+    t.setAttribute('aria-selected', String(selected));
+    t.tabIndex = selected ? 0 : -1;
+    $(t.getAttribute('aria-controls')).hidden = !selected;
+  }
+  if (focus) tab.focus();
+  try { localStorage.setItem(FAME_TAB_KEY, tab.id); } catch { /* not remembered */ }
+}
+
+for (const tab of fameTabs) {
+  tab.addEventListener('click', () => showFameTab(tab));
+  // Arrow keys move between tabs, as in any tab list.
+  tab.addEventListener('keydown', (event) => {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    showFameTab(fameTabs[(fameTabs.indexOf(tab) + step + fameTabs.length) % fameTabs.length], true);
+  });
+}
+try {
+  const saved = $(localStorage.getItem(FAME_TAB_KEY) ?? '');
+  if (fameTabs.includes(saved)) showFameTab(saved);
+} catch { /* default tab */ }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
