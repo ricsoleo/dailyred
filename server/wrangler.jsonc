@@ -15,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "dailyred",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "2920182c-11f2-4180-8731-cc451937eb99",
       "migrations_dir": "migrations"
     }
   ]
