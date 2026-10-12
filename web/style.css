@@ -528,6 +528,7 @@ a { color: inherit; text-underline-offset: 3px; }
 /* Hall of fame --------------------------------------------------------------- */
 
 .fame,
+.about,
 .guide {
   margin-top: 40px;
   padding-top: 28px;
@@ -681,6 +682,12 @@ a { color: inherit; text-underline-offset: 3px; }
   text-underline-offset: 3px;
   cursor: pointer;
 }
+
+/* About: what the game is, in words (also what search engines read). */
+.about p { max-width: 64ch; margin: 0 0 12px; }
+.about-heading { margin: 20px 0 8px; font: 600 17px/1.2 var(--font-pixel); }
+.about-steps { max-width: 64ch; margin: 0; padding-left: 1.4em; }
+.about-steps li { padding: 3px 0; }
 
 /* Guide -------------------------------------------------------------------- */
 
