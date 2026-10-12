@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import {
   GAME_DIR, startServer, launchBrowser, bootGame, sleep, press, screenshot,
   getStatus, waitFor, walkTo, face, patchMemory, readVar, symbol, u16,
-  startRedBattle, forceWin, readGameStatus,
+  startRedBattle, forceWin, forceLoss, readGameStatus,
 } from './lib.mjs';
 import { readParty, formatMon, validateTeam } from './party.mjs';
 
@@ -258,6 +258,31 @@ try {
   const after = readGameStatus(s.mem);
   check(!s.inBattle && after?.phase === 3 && readVar(s.mem, VAR_BATTLES) === 10, 'after the daily game is over, pressing A does nothing (no second battle)');
   await screenshot(page, `${OUT}/15-daily-over.png`);
+  const dailyTeam = teamKey(readParty(s.mem).party);
+
+  // 5b. A rematch with the day's team: same team, one battle, then the game
+  //     ends the same way (the website closes it), with no record message.
+  await page.close();
+  page = await browser.newPage();
+  await bootGame(page, server.url, { seed: 31337, rematch: true, wins: 5, battles: 10 });
+  s = await waitFor(page, (st) => st.inOverworld, { what: 'overworld (rematch)' });
+  check(teamKey(readParty(s.mem).party) === dailyTeam, "a rematch gets the day's team");
+  await sleep(1000);
+  await startRedBattle(page);
+  await forceLoss(page);
+  shot = 0;
+  over = null;
+  for (let i = 0; i < 120 && !over; i++) {
+    await press(page, 'a'); await sleep(300);
+    const st = await getStatus(page);
+    if (!st.inBattle) await screenshot(page, `${OUT}/16-rematch-end-${String(shot++).padStart(2, '0')}.png`);
+    const status = readGameStatus(st.mem);
+    if (status?.phase === 3) over = { st, status };
+  }
+  check(over && over.status.result === 2, 'the game reports the rematch loss, then that the game is over');
+  for (let i = 0; i < 10; i++) { await press(page, 'a'); await sleep(300); }
+  s = await getStatus(page);
+  check(!s.inBattle && readGameStatus(s.mem)?.phase === 3, 'after a rematch, pressing A does nothing (no second battle)');
 
   // 6. Without a seed (e.g. a desktop emulator) the title screen appears and
   //    pressing Start goes straight into the summit with a team.

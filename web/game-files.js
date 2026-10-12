@@ -1,25 +1,26 @@
-// Downloads the ROM and the emulator core once per visit and keeps them in
-// memory, so starting a new run only has to restart the emulator.
+// Downloads: the emulator core (once per visit, kept in memory so starting a
+// new run only has to restart the emulator) and the helpers rom-store.js uses
+// to fetch the ROM patch.
 
-const FILES = {
-  rom: 'game/dailyred.gba.gz',
-  coreJs: 'vendor/mgba_libretro.js',
-  coreWasm: 'vendor/mgba_libretro.wasm',
-};
+const CORE = ['vendor/mgba_libretro.js', 'vendor/mgba_libretro.wasm'];
 
-let cached = null;
+let core = null;
 
 // onProgress(loadedBytes, totalBytes) — totalBytes is 0 when unknown.
-export function loadGameFiles(onProgress = () => {}) {
-  cached ??= download(onProgress).catch((err) => {
-    cached = null; // allow a retry
+export function loadCore(onProgress = () => {}) {
+  core ??= fetchAll(CORE, onProgress).then(([js, wasm]) => ({
+    coreJs: new Blob([js], { type: 'text/javascript' }),
+    coreWasm: new Blob([wasm], { type: 'application/wasm' }),
+  })).catch((err) => {
+    core = null; // allow a retry
     throw err;
   });
-  return cached;
+  return core;
 }
 
-async function download(onProgress) {
-  const responses = await Promise.all(Object.values(FILES).map(async (url) => {
+// Downloads several files with one combined progress report.
+export async function fetchAll(urls, onProgress = () => {}) {
+  const responses = await Promise.all(urls.map(async (url) => {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Couldn't download ${url} (HTTP ${res.status}).`);
     return res;
@@ -31,12 +32,7 @@ async function download(onProgress) {
   let loaded = 0;
   const report = (n) => { loaded += n; onProgress(loaded, total); };
 
-  const [romGz, coreJs, coreWasm] = await Promise.all(responses.map((res) => readAll(res, report)));
-  return {
-    rom: await gunzip(romGz),
-    coreJs: new Blob([coreJs], { type: 'text/javascript' }),
-    coreWasm: new Blob([coreWasm], { type: 'application/wasm' }),
-  };
+  return Promise.all(responses.map((res) => readAll(res, report)));
 }
 
 async function readAll(res, report) {
@@ -59,7 +55,7 @@ async function readAll(res, report) {
   return bytes;
 }
 
-async function gunzip(bytes) {
+export async function gunzip(bytes) {
   // Some hosts send .gz files with Content-Encoding: gzip, in which case the
   // browser has already unpacked it.
   if (bytes[0] !== 0x1f || bytes[1] !== 0x8b) return bytes;

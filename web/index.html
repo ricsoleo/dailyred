@@ -12,7 +12,7 @@
   <script type="module" src="app.js"></script>
 </head>
 <body>
-  <main class="app" data-state="title">
+  <main class="app" data-state="loading">
     <header class="masthead">
       <h1 class="title">Daily Red</h1>
     </header>
@@ -22,8 +22,8 @@
         <div class="screen" id="screen">
           <div class="card card-title">
             <div class="snow" aria-hidden="true"></div>
-            <img class="red-sprite" src="game/red.png" width="64" height="64" alt="RED">
-            <dl class="stats">
+            <img class="red-sprite" id="red-sprite" width="64" height="64" alt="RED" hidden>
+            <dl class="stats" id="stats">
               <div><dt>Wins</dt><dd id="stat-wins">0</dd></div>
               <div><dt>Losses</dt><dd id="stat-losses">0</dd></div>
               <div><dt>Win streak</dt><dd id="stat-win-streak">0</dd></div>
@@ -33,11 +33,34 @@
             <div class="played" id="played" hidden>
               <p class="played-result" id="played-result"></p>
               <p class="played-next" id="played-next"></p>
+              <button class="button button-again" id="play-again" type="button">Play again</button>
             </div>
-            <p class="card-note" id="practice-note" hidden>Practice run: results aren't saved.</p>
+            <p class="card-note" id="title-note" hidden></p>
+          </div>
+          <div class="card card-rom">
+            <div class="snow" aria-hidden="true"></div>
+            <p class="card-heading">Load your FireRed ROM</p>
+            <p class="card-note">Daily Red runs on your own copy of Pokémon FireRed (USA, version 1.0 or 1.1). It stays in this browser: the site only sends a patch.</p>
+            <label class="button button-play" for="rom-file">Choose ROM</label>
+            <input class="visually-hidden" id="rom-file" type="file" accept=".gba,.agb,.bin,application/octet-stream">
+            <p class="card-note card-problem" id="rom-error" role="alert" hidden></p>
+          </div>
+          <div class="card card-join">
+            <div class="snow" aria-hidden="true"></div>
+            <p class="card-heading">Choose your trainer name</p>
+            <form class="join-form" id="join-form">
+              <input class="field" id="join-name" name="name" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Trainer name" aria-label="Trainer name" required>
+              <button class="button button-play" type="submit">Start</button>
+            </form>
+            <form class="join-form" id="restore-form" hidden>
+              <input class="field field-code" id="restore-code" name="code" autocomplete="off" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" aria-label="Recovery code" required>
+              <button class="button button-play" type="submit">Restore</button>
+            </form>
+            <button class="link-button" id="toggle-restore" type="button">I have a recovery code</button>
+            <p class="card-note card-problem" id="join-error" role="alert" hidden></p>
           </div>
           <div class="card card-loading" role="status" aria-live="polite">
-            <p class="card-heading" id="loading-text">Downloading the game</p>
+            <p class="card-heading" id="loading-text">Getting ready</p>
             <div class="meter"><div class="meter-fill" id="meter"></div></div>
             <p class="card-note" id="loading-detail"></p>
           </div>
@@ -52,6 +75,7 @@
       <div class="toolbar">
         <button class="button button-quiet" id="sound" type="button" aria-pressed="false" disabled>Mute</button>
         <button class="button button-quiet" id="fullscreen" type="button" disabled>Full screen</button>
+        <button class="button button-quiet toolbar-end" id="change-rom" type="button">Change ROM</button>
       </div>
 
       <div class="pad" aria-label="Touch controls">
@@ -73,8 +97,40 @@
       </div>
     </section>
 
+    <section class="trainer" id="trainer" aria-label="Your trainer" hidden>
+      <p class="trainer-line">Trainer <strong class="trainer-name" id="trainer-name"></strong> <span class="trainer-id" id="trainer-id"></span></p>
+      <button class="button button-quiet" id="show-code" type="button">Recovery code</button>
+      <div class="code-box" id="code-box" hidden>
+        <p class="code-note" id="code-note"></p>
+        <div class="code-row">
+          <code class="code-text" id="code-text"></code>
+          <button class="button button-quiet" id="copy-code" type="button">Copy</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="fame" id="fame" aria-labelledby="fame-heading">
+      <h2 class="section-heading" id="fame-heading">Hall of Fame</h2>
+      <p class="fame-summary" id="fame-summary">Loading…</p>
+      <div class="fame-boards">
+        <div class="fame-board">
+          <h3 class="fame-title">Today's champions</h3>
+          <ol class="fame-list" id="fame-today"></ol>
+        </div>
+        <div class="fame-board">
+          <h3 class="fame-title">Most wins</h3>
+          <ol class="fame-list" id="fame-wins"></ol>
+        </div>
+        <div class="fame-board">
+          <h3 class="fame-title">Win streaks</h3>
+          <ol class="fame-list" id="fame-streaks"></ol>
+        </div>
+      </div>
+      <p class="fame-note">Only each trainer's first battle of the day counts; rematches don't. A new day starts at midnight UTC. Results are reported by each player's browser.</p>
+    </section>
+
     <section class="guide">
-      <h2 class="guide-heading">Keyboard</h2>
+      <h2 class="section-heading">Keyboard</h2>
       <dl class="keys">
         <div><dt><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></dt><dd>Walk, move the cursor</dd></div>
         <div><dt><kbd>X</kbd></dt><dd>A button: talk, confirm</dd></div>
@@ -88,6 +144,7 @@
     <footer class="footer">
       <p>Daily Red is a free, unofficial fan project. It isn't affiliated with or endorsed by Nintendo, Creatures Inc., GAME FREAK inc. or The Pokémon Company. Pokémon and all game content are © Nintendo, Creatures Inc. and GAME FREAK inc.</p>
       <p><a href="licenses.txt">Licenses</a> · <a href="https://github.com/amoi-builds/dailyred">Source</a></p>
+      <p class="credit">Daily Red was created by amoi-builds: <a href="https://github.com/amoi-builds/dailyred">github.com/amoi-builds/dailyred</a></p>
     </footer>
   </main>
 </body>

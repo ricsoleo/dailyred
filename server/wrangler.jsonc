@@ -1,0 +1,22 @@
+// Daily Red on Cloudflare: one Worker serves the static site (../web) and the
+// API under /api/, with a D1 (SQLite) database for players and battles.
+//
+// Before the first deploy, create the database and paste its id below:
+//   npx wrangler d1 create dailyred
+{
+  "name": "dailyred",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "../web",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dailyred",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

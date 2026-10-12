@@ -3,7 +3,9 @@
 // uses, pressing buttons, and reading game RAM out of a save state.
 import { chromium } from 'playwright-core';
 import { spawn, execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -35,6 +37,50 @@ export async function startServer() {
   return { url, close: () => server.kill() };
 }
 
+function freePort() {
+  return new Promise((ok, fail) => {
+    const probe = createServer();
+    probe.once('error', fail);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => ok(port));
+    });
+  });
+}
+
+// Runs the whole website (static files + API, see server/) in wrangler's local
+// Workers runtime with a fresh, empty database. TEST_CLOCK=1 makes the server
+// take its clock from the X-Test-Now header, so tests can play several days.
+export async function startSite() {
+  const serverDir = join(ROOT, 'server');
+  const wrangler = join(serverDir, 'node_modules/.bin/wrangler');
+  if (!existsSync(wrangler)) throw new Error('wrangler missing: run `npm install` in server/ first.');
+  const state = mkdtempSync(join(tmpdir(), 'dailyred-db-'));
+  const env = { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false', NO_COLOR: '1' };
+  execFileSync(wrangler, ['d1', 'migrations', 'apply', 'DB', '--local', '--persist-to', state], { cwd: serverDir, env, stdio: 'pipe' });
+  const port = await freePort();
+  const proc = spawn(wrangler, ['dev', '--ip', '127.0.0.1', '--port', String(port), '--persist-to', state, '--var', 'TEST_CLOCK:1'], {
+    cwd: serverDir, env, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let log = '';
+  proc.stdout.on('data', (d) => { log += d; });
+  proc.stderr.on('data', (d) => { log += d; });
+  const close = () => {
+    proc.kill();
+    rmSync(state, { recursive: true, force: true });
+  };
+  process.on('exit', close);
+  const url = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 120; i++) {
+    if (proc.exitCode !== null) throw new Error(`wrangler dev exited:\n${log}`);
+    try {
+      if ((await fetch(`${url}/api/halloffame`)).ok) return { url, close, log: () => log };
+    } catch { /* not up yet */ }
+    await sleep(500);
+  }
+  throw new Error(`wrangler dev didn't start:\n${log}`);
+}
+
 export async function launchBrowser() {
   return chromium.launch({
     executablePath: findChrome(),
@@ -43,28 +89,30 @@ export async function launchBrowser() {
   });
 }
 
-// Boots the ROM in a bare page (no website UI) with an optional seed. By
+// Boots the locally built ROM (served by scripts/serve.mjs) in a bare page
+// (no website UI) with an optional seed. By
 // default the game deals a new team after each battle; daily: true plays the
 // website's daily game instead (one battle, starting from wins / battles).
 // The emulator instance is exposed as window.emu.
-export async function bootGame(page, baseUrl, { seed, daily = false, wins = 0, battles = 0 } = {}) {
+export async function bootGame(page, baseUrl, { seed, daily = false, rematch = false, wins = 0, battles = 0 } = {}) {
   await page.goto(`${baseUrl}/__test__`);
   await page.setContent('<canvas id="screen" width="480" height="320" style="display:block"></canvas>');
-  await page.evaluate(async ({ seed, daily, wins, battles }) => {
+  await page.evaluate(async ({ seed, daily, rematch, wins, battles }) => {
     const { Nostalgist } = await import('/vendor/nostalgist.js');
     const { injectConfig } = await import('/rom-config.js');
-    const { loadGameFiles } = await import('/game-files.js');
-    const files = await loadGameFiles();
-    const rom = seed ? injectConfig(files.rom, { seed, daily, wins, battles }) : files.rom;
+    const { loadCore } = await import('/game-files.js');
+    const core = await loadCore();
+    const built = new Uint8Array(await (await fetch('/__local__/dailyred.gba')).arrayBuffer());
+    const rom = seed ? injectConfig(built, { seed, daily, rematch, wins, battles }) : built;
     window.emu = await Nostalgist.launch({
       core: 'mgba',
       element: document.getElementById('screen'),
       rom: { fileName: 'dailyred.gba', fileContent: new Blob([rom]) },
-      resolveCoreJs: () => files.coreJs,
-      resolveCoreWasm: () => files.coreWasm,
+      resolveCoreJs: () => core.coreJs,
+      resolveCoreWasm: () => core.coreWasm,
       retroarchConfig: { savestate_file_compression: false, savestate_thumbnail_enable: false },
     });
-  }, { seed, daily, wins, battles });
+  }, { seed, daily, rematch, wins, battles });
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

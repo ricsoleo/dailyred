@@ -1,11 +1,16 @@
-// Minimal static file server for local development (no dependencies).
+// Minimal static file server for the game tests (no dependencies).
 //   node scripts/serve.mjs [port]      -> serves ./web on http://localhost:8080
+//
+// It also serves your locally built ROM at /__local__/dailyred.gba, which
+// tests/lib.mjs boots directly. The website itself needs the API: to play
+// locally, use the dev script in server/ instead (see README).
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('../web', import.meta.url)));
+const localRom = fileURLToPath(new URL('../pokefirered/pokefirered_modern.gba', import.meta.url));
 const port = Number(process.argv[2] || process.env.PORT || 8080);
 
 const types = {
@@ -25,8 +30,8 @@ const types = {
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
-    let path = normalize(join(root, decodeURIComponent(url.pathname)));
-    if (!path.startsWith(root)) throw Object.assign(new Error('forbidden'), { code: 'EACCES' });
+    let path = url.pathname === '/__local__/dailyred.gba' ? localRom : normalize(join(root, decodeURIComponent(url.pathname)));
+    if (path !== localRom && !path.startsWith(root)) throw Object.assign(new Error('forbidden'), { code: 'EACCES' });
     if ((await stat(path)).isDirectory()) path = join(path, 'index.html');
     const body = await readFile(path);
     res.writeHead(200, {

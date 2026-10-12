@@ -15,3 +15,9 @@
 /tests/node_modules/
 /tests/output/
 .DS_Store
+
+# server/: wrangler local state and dependencies
+/server/.wrangler/
+/server/node_modules/
+# scripts/build-patches.sh: unmodified pret/pokefirered and its original ROMs
+/.retail/

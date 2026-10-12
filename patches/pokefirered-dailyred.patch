@@ -118,10 +118,10 @@ index 0000000..6317762
 +}
 diff --git a/data/maps/DailyRed_Summit/scripts.inc b/data/maps/DailyRed_Summit/scripts.inc
 new file mode 100644
-index 0000000..033ded0
+index 0000000..b2a599a
 --- /dev/null
 +++ b/data/maps/DailyRed_Summit/scripts.inc
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,86 @@
 +DailyRed_Summit_MapScripts::
 +	.byte 0
 +
@@ -147,16 +147,18 @@ index 0000000..033ded0
 +	waitfanfare
 +	waitbuttonpress
 +	call DailyRed_Summit_EventScript_BufferRecord
-+	specialvar VAR_RESULT, DailyRed_IsDailyGame
-+	goto_if_eq VAR_RESULT, TRUE, DailyRed_Summit_EventScript_DailyWin
++	specialvar VAR_RESULT, DailyRed_GetGameMode
++	goto_if_eq VAR_RESULT, DAILYRED_MODE_DAILY, DailyRed_Summit_EventScript_DailyWin
++	goto_if_eq VAR_RESULT, DAILYRED_MODE_REMATCH, DailyRed_Summit_EventScript_RematchOver
 +	goto DailyRed_Summit_EventScript_NextRun
 +	end
 +
 +DailyRed_Summit_EventScript_PlayerLost::
 +	msgbox DailyRed_Summit_Text_PlayerLost
 +	call DailyRed_Summit_EventScript_BufferRecord
-+	specialvar VAR_RESULT, DailyRed_IsDailyGame
-+	goto_if_eq VAR_RESULT, TRUE, DailyRed_Summit_EventScript_DailyLoss
++	specialvar VAR_RESULT, DailyRed_GetGameMode
++	goto_if_eq VAR_RESULT, DAILYRED_MODE_DAILY, DailyRed_Summit_EventScript_DailyLoss
++	goto_if_eq VAR_RESULT, DAILYRED_MODE_REMATCH, DailyRed_Summit_EventScript_RematchOver
 +	goto DailyRed_Summit_EventScript_NextRun
 +	end
 +
@@ -174,6 +176,13 @@ index 0000000..033ded0
 +
 +DailyRed_Summit_EventScript_DailyLoss::
 +	msgbox DailyRed_Summit_Text_RecordLoss
++	goto DailyRed_Summit_EventScript_DailyGameOver
++	end
++
++@ A rematch with the day's team: it doesn't count, so no record, and the
++@ website closes the game the same way.
++DailyRed_Summit_EventScript_RematchOver::
++	msgbox DailyRed_Summit_Text_RematchOver
 +	goto DailyRed_Summit_EventScript_DailyGameOver
 +	end
 +
@@ -201,10 +210,10 @@ index 0000000..033ded0
 +	end
 diff --git a/data/maps/DailyRed_Summit/text.inc b/data/maps/DailyRed_Summit/text.inc
 new file mode 100644
-index 0000000..1a0b48b
+index 0000000..4185ecf
 --- /dev/null
 +++ b/data/maps/DailyRed_Summit/text.inc
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,38 @@
 +DailyRed_Summit_Text_RedIntro::
 +    .string "…\p"
 +    .string "…………$"
@@ -233,6 +242,11 @@ index 0000000..1a0b48b
 +    .string "{STR_VAR_2} battle(s).\p"
 +    .string "Try again tomorrow.$"
 +
++DailyRed_Summit_Text_RematchOver::
++    .string "Rematches don't count\n"
++    .string "for the HALL OF FAME.\p"
++    .string "Try again any time!$"
++
 +DailyRed_Summit_Text_NextRun::
 +    .string "Record: {STR_VAR_1} win(s) in\n"
 +    .string "{STR_VAR_2} battle(s).\p"
@@ -253,7 +267,7 @@ index 8c382f5..cae2f25 100644
    "gMapGroup_SpecialArea": [
      "NavelRock_Exterior",
 diff --git a/data/specials.inc b/data/specials.inc
-index d880bf6..485a37e 100644
+index d880bf6..f25562b 100644
 --- a/data/specials.inc
 +++ b/data/specials.inc
 @@ -452,4 +452,9 @@ gSpecials::
@@ -264,14 +278,14 @@ index d880bf6..485a37e 100644
 +	def_special DailyRed_OnBattleStart
 +	def_special DailyRed_OnBattleEnd
 +	def_special DailyRed_OnDailyGameOver
-+	def_special DailyRed_IsDailyGame
++	def_special DailyRed_GetGameMode
  gSpecialsEnd::
 diff --git a/include/constants/dailyred.h b/include/constants/dailyred.h
 new file mode 100644
-index 0000000..27c41b2
+index 0000000..1693dbc
 --- /dev/null
 +++ b/include/constants/dailyred.h
-@@ -0,0 +1,13 @@
+@@ -0,0 +1,19 @@
 +#ifndef GUARD_CONSTANTS_DAILYRED_H
 +#define GUARD_CONSTANTS_DAILYRED_H
 +
@@ -283,6 +297,12 @@ index 0000000..27c41b2
 +// data/maps/DailyRed_Summit/map.json).
 +#define DAILYRED_START_X 9
 +#define DAILYRED_START_Y 18
++
++// How the website runs the game: gDailyRedRomConfig.daily (src/dailyred.c),
++// set by web/rom-config.js.
++#define DAILYRED_MODE_FREE    0 // a new team after every battle (practice runs, desktop emulators)
++#define DAILYRED_MODE_DAILY   1 // the day's battle: one battle, the record, then the game ends
++#define DAILYRED_MODE_REMATCH 2 // another go with the day's team: one battle, not counted, then the game ends
 +
 +#endif // GUARD_CONSTANTS_DAILYRED_H
 diff --git a/include/constants/event_objects.h b/include/constants/event_objects.h
@@ -338,7 +358,7 @@ index 5c7bbf8..e477fa9 100644
  #define VAR_0x402D                         0x402D
 diff --git a/include/dailyred.h b/include/dailyred.h
 new file mode 100644
-index 0000000..47b058b
+index 0000000..b00e1f8
 --- /dev/null
 +++ b/include/dailyred.h
 @@ -0,0 +1,42 @@
@@ -377,7 +397,7 @@ index 0000000..47b058b
 +void DailyRed_OnBattleStart(void);
 +void DailyRed_OnBattleEnd(void);
 +void DailyRed_OnDailyGameOver(void);
-+u16 DailyRed_IsDailyGame(void);
++u16 DailyRed_GetGameMode(void);
 +void DailyRed_ApplyBossEVs(struct Pokemon *party, u8 partySize);
 +
 +// src/dailyred_team.c
@@ -436,10 +456,10 @@ index 6d62084..44f97e4 100644
      DoTrainerBattle();
 diff --git a/src/dailyred.c b/src/dailyred.c
 new file mode 100644
-index 0000000..1ec6e68
+index 0000000..43f5ba8
 --- /dev/null
 +++ b/src/dailyred.c
-@@ -0,0 +1,221 @@
+@@ -0,0 +1,227 @@
 +#include "global.h"
 +#include "gflib.h"
 +#include "dailyred.h"
@@ -471,7 +491,7 @@ index 0000000..1ec6e68
 +    u32 seed;
 +    u16 wins;    // the player's record before this game, for the record message
 +    u16 battles;
-+    u8 daily;    // TRUE: the website's daily game (one battle, then the game ends)
++    u8 daily;    // DAILYRED_MODE_*: free play, the day's battle or a rematch
 +    u8 padding[3];
 +};
 +
@@ -527,9 +547,15 @@ index 0000000..1ec6e68
 +    return *(const vu32 *)&gDailyRedRomConfig.seed;
 +}
 +
-+static bool8 IsDailyGame(void)
++static u8 GetGameMode(void)
 +{
 +    return *(const vu8 *)&gDailyRedRomConfig.daily;
++}
++
++// The day's battle or a rematch: one battle, then the game ends.
++static bool8 IsDailyGame(void)
++{
++    return GetGameMode() != DAILYRED_MODE_FREE;
 +}
 +
 +static void InitStatus(u32 seed)
@@ -642,10 +668,10 @@ index 0000000..1ec6e68
 +    sStatus.phase = DAILYRED_PHASE_FINISHED;
 +}
 +
-+// Specialvar: TRUE in the website's daily game, which ends after one battle.
-+u16 DailyRed_IsDailyGame(void)
++// Specialvar: DAILYRED_MODE_FREE, DAILYRED_MODE_DAILY or DAILYRED_MODE_REMATCH.
++u16 DailyRed_GetGameMode(void)
 +{
-+    return IsDailyGame();
++    return GetGameMode();
 +}
 +
 +// Vanilla trainer parties have no EVs; give RED his spreads from

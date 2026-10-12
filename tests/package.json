@@ -4,7 +4,9 @@
   "type": "module",
   "description": "Headless browser tests for Daily Red (drives your installed Google Chrome)",
   "scripts": {
-    "test": "node smoke.mjs && node site.mjs",
+    "test": "node bps.mjs && node api.mjs && node smoke.mjs && node site.mjs",
+    "bps": "node bps.mjs",
+    "api": "node api.mjs",
     "smoke": "node smoke.mjs",
     "site": "node site.mjs",
     "teams": "node teams.mjs"

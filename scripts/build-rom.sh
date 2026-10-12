@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds the modified FireRed ROM with the project-local toolchain
-# (see scripts/setup-macos.sh) and puts a gzipped copy in web/game/ for the website.
+# (see scripts/setup-macos.sh). The website never ships this ROM: run
+# scripts/build-patches.sh next to turn it into patches for web/game/.
 #
 #   scripts/build-rom.sh            # normal build
 #   scripts/build-rom.sh clean      # any extra args are passed to make
@@ -31,13 +32,9 @@ fi
 make -C "$GAME" -j"$JOBS" TOOLCHAIN="$TC/arm-none-eabi" MODERN=1
 
 ROM="$GAME/pokefirered_modern.gba"
-# The website downloads a gzipped copy (16 MB -> ~5.5 MB, mostly 0xFF padding)
-# and unpacks it in the browser, so it stays small on any static host.
-mkdir -p "$ROOT/web/game"
-rm -f "$ROOT/web/game/dailyred.gba"
-gzip -9 -n -c "$ROM" > "$ROOT/web/game/dailyred.gba.gz"
-# RED's battle sprite for the site's title card (from the decomp, like the ROM).
-cp "$GAME/graphics/trainers/front_pics/red_front_pic.png" "$ROOT/web/game/red.png"
+# Older versions of this script copied the ROM into web/game/; make sure no
+# copy is left where it could be deployed.
+rm -f "$ROOT/web/game/dailyred.gba.gz" "$ROOT/web/game/dailyred.gba" "$ROOT/web/game/red.png"
 echo
 echo "Built $ROM"
-echo "Website copy: web/game/dailyred.gba.gz ($(wc -c < "$ROOT/web/game/dailyred.gba.gz" | tr -d ' ') bytes)"
+echo "Next: scripts/build-patches.sh (the patches the website ships)"

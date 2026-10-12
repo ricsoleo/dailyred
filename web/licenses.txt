@@ -1,9 +1,11 @@
 Daily Red: third-party software and content
 ===========================================
 
-Pokémon FireRed (the ROM in game/)
-  Built from pret/pokefirered (https://github.com/pret/pokefirered), a
-  community decompilation of Pokémon FireRed, with Daily Red's changes.
+Pokémon FireRed (patched in your browser from your own ROM)
+  The site doesn't include the game. The patches in game/ turn your own
+  Pokémon FireRed (USA) ROM into Daily Red, built from pret/pokefirered
+  (https://github.com/pret/pokefirered), a community decompilation of
+  Pokémon FireRed, with Daily Red's changes.
   Pokémon and all game content are © Nintendo, Creatures Inc. and GAME FREAK
   inc. This is a free, unofficial fan project, not affiliated with or endorsed
   by them or The Pokémon Company.
